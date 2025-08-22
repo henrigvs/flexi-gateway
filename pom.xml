@@ -10,7 +10,7 @@
     </parent>
     <groupId>be.aidji</groupId>
     <artifactId>flexi-gate</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0-SNAPSHOT</version>
 
     <name>flexi-gate</name>
     <description>flexi-gate</description>
@@ -52,10 +52,10 @@
         </dependency>
 
         <!-- Spring Security (optionnel pour JWT/OAuth2) -->
-        <dependency>
+        <!--ependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
-        </dependency>
+        </dependency-->
 
         <!-- JWT (si tu veux gérer les tokens) -->
         <dependency>

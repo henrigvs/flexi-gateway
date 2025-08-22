@@ -1,37 +1,30 @@
 # Étape 1 : Build
-FROM eclipse-temurin:21-jdk-jammy AS build
+FROM openjdk:21-slim AS build
 
 WORKDIR /app
 
-# Copier le wrapper Maven et config
+# Copy mvn wrapper and config
 COPY mvnw .
 COPY .mvn .mvn
 COPY pom.xml .
 
-# Télécharger les dépendances en cache (accélère les builds)
+# Download deps in cache
 RUN ./mvnw dependency:go-offline -B
 
-# Copier le code source et compiler
+# Copy source code + compiling
 COPY src src
 RUN ./mvnw clean package -DskipTests
 
-# Étape 2 : Image finale minimale
-FROM eclipse-temurin:21-jre-jammy
+# Étape 2 : Final minimal image
+FROM openjdk:21-slim
 
 WORKDIR /app
 
-# Copier uniquement le JAR final
+# Copy only final jar
 COPY --from=build /app/target/*.jar app.jar
 
-# Config externe montée depuis le docker-compose ou k8s
+# External config mounted wince docker compose
 VOLUME /config
-ENV ROUTES_FILE=/config/routes.json
-
-# Profil Spring par défaut (surchargeable via .env)
-ENV SPRING_PROFILES_ACTIVE=prod
-
-# Port exposé (doit correspondre à ton docker-compose)
-EXPOSE 12345
 
 # Lancement
 ENTRYPOINT ["java","-jar","app.jar"]

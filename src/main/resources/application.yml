@@ -1,1 +1,24 @@
-spring.application.name=flexi-gate
+server:
+  port: ${GATEWAY_PORT:8443}
+
+spring:
+  application:
+    name: flexi-gate
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_SERVER_NAME}:${EUREKA_SERVER_PORT}/eureka/
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.cloud.client.discovery.simple: DEBUG
+    reactor.netty.http.client: DEBUG

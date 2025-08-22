@@ -3,56 +3,53 @@ version: "3.9"
 name: flexi-gate-stack
 
 networks:
-  api-gateway-network:
+  gateway-network:
+    name: gateway-network
     driver: bridge
+  nginx-network:
+    name: nginx-network
+    external: true
 
 services:
   flexi-gate:
     build:
       context: .
       dockerfile: Dockerfile
-    # image: registry.aidji.be/flexi-gate:1.0
     container_name: flexi-gate
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      # Valeurs par défaut si absentes du .env
-      - SERVER_PORT=${SERVER_PORT:-12345}
-      - EUREKA_DISCOVERY=${EUREKA_DISCOVERY:-false}
-      - TZ=${TZ:-Europe/Brussels}
-      - ROUTES_FILE=${ROUTES_FILE:-/config/routes.json}
-    ports:
-      - "${HOST_PORT:-8080}:${SERVER_PORT:-12345}"
     volumes:
       - ./config:/config:ro
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:${SERVER_PORT}/actuator/health | grep -q '\"status\":\"UP\"'"]
+      # 👇 Valeur par défaut si GATEWAY_PORT n'est pas défini au niveau du projet
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:${GATEWAY_PORT:-8443}/actuator/health | grep -q '\"status\":\"UP\"'"]
       interval: 10s
       timeout: 3s
       retries: 10
       start_period: 15s
     networks:
-      - api-gateway-network
+      - gateway-network
+      - nginx-network
 
-  # 🔁 Optional: sidecar to refresh automatic routes
+  # 🔁 Sidecar: refresh auto des routes à chaque modification de /config/routes.json
   routes-reloader:
     image: alpine:3.20
     container_name: flexi-gate-reloader
     depends_on:
       flexi-gate:
-        condition: service_healthy
+        condition: service_started
     command: >
       sh -c "
         apk add --no-cache inotify-tools curl >/dev/null &&
         echo '[reloader] watching /config/routes.json' &&
         while inotifywait -e close_write /config/routes.json; do
           echo '[reloader] change detected -> refreshing gateway routes' &&
-          curl -fsS -X POST http://flexi-gate:${SERVER_PORT}/gateway/refresh || true;
+          curl -fsS -X POST http://flexi-gate:${GATEWAY_PORT:-8443}/gateway/refresh || true;
         done
       "
     volumes:
       - ./config:/config:ro
     networks:
-      - api-gateway-network
+      - gateway-network
     restart: unless-stopped

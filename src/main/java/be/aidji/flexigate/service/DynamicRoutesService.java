@@ -27,7 +27,6 @@ public class DynamicRoutesService {
 
     public List<RouteDefinition> loadRoutes() {
 
-
         if(routesFile == null || routesFile.isEmpty()) {
             throw new IllegalArgumentException("Routes file path is not set or does not exist");
 
