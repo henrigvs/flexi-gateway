@@ -27,6 +27,7 @@ pipeline {
     REGISTRY_CREDS_ID = 'DOCKER_REGISTRY_CREDS'
     CONTAINER_NAME = 'flexi-gate'
     DOCKER_NETWORK = 'gateway-network'
+    WEB_SERVER_NETWORK = 'nginx-network'
   }
 
   stages {
@@ -157,6 +158,7 @@ set -euo pipefail
 docker run -d \\
   --name ${CONTAINER_NAME} \\
   --network ${DOCKER_NETWORK} \\
+  --network ${WEB_SERVER_NETWORK} \\
   -e SPRING_PROFILES_ACTIVE=${params.SPRING_PROFILE} \\
   -v /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.yml:/app/config/application-routes.yml:ro \\
   --restart unless-stopped \\
@@ -223,6 +225,7 @@ echo "✅ Cleanup complete"
       echo "   Container: ${CONTAINER_NAME}"
       echo "   Image: ${env.FULL_IMAGE_NAME}"
       echo "   Network: ${DOCKER_NETWORK}"
+      echo "   Web server network: ${WEB_SERVER_NETWORK}"
       echo "   Spring Profile: ${params.SPRING_PROFILE}"
       echo "   Access flexi-gate from other containers at: http://${CONTAINER_NAME}:${GATEWAY_PORT:8443}"
     }
