@@ -29,7 +29,7 @@ spring:
       client:
         simple:
           instances:
-            taos-backend-local:
+            usma:
               - uri: http://usma:8090
               - uri: http://usma:8091
 

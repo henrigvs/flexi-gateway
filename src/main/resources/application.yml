@@ -5,13 +5,6 @@ spring:
   application:
     name: flexi-gate
   cloud:
-    discovery:
-      client:
-        simple:
-          instances:
-            taos-backend-local:
-              - uri: http://taos-backend-${SPRING_PROFILES_ACTIVE}-1:${TAOS_BACKEND_PORT_1}
-              - uri: http://taos-backend-${SPRING_PROFILES_ACTIVE}-2:${TAOS_BACKEND_PORT_2}
     gateway:
       server:
         webflux:
@@ -21,7 +14,7 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: http://${EUREKA_SERVER_NAME}:${EUREKA_SERVER_PORT}/eureka/
+      defaultZone: http://eureka:${EUREKA-PORT:8761}/eureka/
 
 management:
   endpoints:
