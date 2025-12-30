@@ -1,0 +1,54 @@
+server:
+  port: ${GATEWAY_PORT:8443}
+
+spring:
+  application:
+    name: flexi-gate
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            # 🌐 WebSocket
+            - id: usma-websocket
+              uri: lb:ws://usma
+              predicates:
+                - Path=/ws/**
+                - Header=Upgrade, websocket
+
+            # 🔁 REST (load balanced)
+            - id: usma-rest
+              uri: lb://usma
+              predicates:
+                - Path=/usma/api/**
+              filters:
+                - StripPrefix=2
+          default-filters:
+            - AddRequestHeader=X-Default-Header, DefaultValue
+
+    discovery:
+      enabled: false
+      client:
+        simple:
+          instances:
+            taos-backend-local:
+              - uri: http://usma:8090
+              - uri: http://usma:8091
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:6000/eureka/
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.cloud.client.discovery.simple: DEBUG
+    reactor.netty.http.client: DEBUG
