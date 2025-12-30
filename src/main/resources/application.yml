@@ -12,6 +12,11 @@ spring:
             taos-backend-local:
               - uri: http://taos-backend-${SPRING_PROFILES_ACTIVE}-1:${TAOS_BACKEND_PORT_1}
               - uri: http://taos-backend-${SPRING_PROFILES_ACTIVE}-2:${TAOS_BACKEND_PORT_2}
+    gateway:
+      server:
+        webflux:
+          default-filters:
+            - AddRequestHeader=X-Default-Header, DefaultValue
 
 eureka:
   client:

@@ -1,0 +1,341 @@
+pipeline {
+  agent any
+
+  parameters {
+    choice(
+      name: 'RELEASE_TYPE',
+      choices: ['snapshot', 'patch', 'minor', 'major'],
+      description: '''Release type:
+        - snapshot: Keep current SNAPSHOT version (e.g., 1.0.6-SNAPSHOT)
+        - patch: 1.0.6-SNAPSHOT -> 1.0.6 -> 1.0.7-SNAPSHOT
+        - minor: 1.0.6-SNAPSHOT -> 1.1.0 -> 1.1.1-SNAPSHOT
+        - major: 1.0.6-SNAPSHOT -> 2.0.0 -> 2.0.1-SNAPSHOT'''
+    )
+    booleanParam(name: 'PUSH_LATEST', defaultValue: true, description: 'Tag and push as :latest in addition to version tag')
+    string(name: 'TARGET_BRANCH', defaultValue: 'main', description: 'Target branch for git push (e.g., main, master, develop)')
+  }
+
+  environment {
+    REGISTRY    = 'registry.aidji.be'
+    IMAGE_NAME  = 'flexi-gate'
+    REGISTRY_CREDS_ID = 'DOCKER_REGISTRY_CREDS'
+
+    // Force Maven to use Java 25
+    JAVA_HOME = '/usr/lib/jvm/temurin-25-jdk-amd64'
+    PATH = "/usr/lib/jvm/temurin-25-jdk-amd64/bin:${env.PATH}"
+    MAVEN_OPTS = '-Dmaven.repo.local=.m2/repository -Dstyle.color=never'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        echo "Checking out code..."
+        checkout scm
+      }
+    }
+
+    stage('Calculate Versions') {
+      steps {
+        script {
+          // Read current version using Maven (more robust than grep/sed)
+          def ansiRegex = '[\\u001B\\u009B][\\[;\\d]*[ -/]*[@-~]'
+          def rawOutput = sh(
+            script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout',
+            returnStdout: true
+          ).trim()
+
+          // Clean ANSI characters and extract version
+          def versionLines = rawOutput.readLines()
+            .collect { it.replaceAll(ansiRegex, '').trim() }
+            .findAll { it ==~ /^[0-9]+\.[0-9]+\.[0-9]+(-SNAPSHOT)?$/ }
+
+          if (versionLines.isEmpty()) {
+            error("❌ Unable to parse version from Maven. Raw output: '${rawOutput}'")
+          }
+
+          def currentVersion = versionLines[0]
+          echo "📦 Current version from Maven: ${currentVersion}"
+
+          // Parse version (e.g., "1.0.6-SNAPSHOT")
+          def versionPattern = ~/(\d+)\.(\d+)\.(\d+)(-SNAPSHOT)?/
+          def matcher = currentVersion =~ versionPattern
+
+          if (!matcher.matches()) {
+            error("❌ Unable to parse version: ${currentVersion}")
+          }
+
+          def major = matcher[0][1] as Integer
+          def minor = matcher[0][2] as Integer
+          def patch = matcher[0][3] as Integer
+
+          echo "Parsed version - major: ${major}, minor: ${minor}, patch: ${patch}"
+
+          def releaseVersion
+          def nextVersion
+
+          switch(params.RELEASE_TYPE) {
+            case 'snapshot':
+              // Keep current SNAPSHOT version for both
+              releaseVersion = currentVersion
+              nextVersion = currentVersion
+              echo "SNAPSHOT build - no version change"
+              break
+
+            case 'patch':
+              // Remove -SNAPSHOT for release, increment patch for next
+              releaseVersion = "${major}.${minor}.${patch}"
+              nextVersion = "${major}.${minor}.${patch + 1}-SNAPSHOT"
+              echo "PATCH release: ${currentVersion} -> ${releaseVersion} -> ${nextVersion}"
+              break
+
+            case 'minor':
+              // Increment minor, reset patch to 0 for release
+              releaseVersion = "${major}.${minor + 1}.0"
+              nextVersion = "${major}.${minor + 1}.1-SNAPSHOT"
+              echo "MINOR release: ${currentVersion} -> ${releaseVersion} -> ${nextVersion}"
+              break
+
+            case 'major':
+              // Increment major, reset minor and patch to 0 for release
+              releaseVersion = "${major + 1}.0.0"
+              nextVersion = "${major + 1}.0.1-SNAPSHOT"
+              echo "MAJOR release: ${currentVersion} -> ${releaseVersion} -> ${nextVersion}"
+              break
+
+            default:
+              error("❌ Unknown release type: ${params.RELEASE_TYPE}")
+          }
+
+          env.RELEASE_VERSION = releaseVersion
+          env.NEXT_VERSION = nextVersion
+          env.CURRENT_VERSION = currentVersion
+          env.IS_SNAPSHOT_BUILD = (params.RELEASE_TYPE == 'snapshot') ? 'true' : 'false'
+
+          // Set build description for easy identification
+          currentBuild.description = "v${releaseVersion}"
+
+          echo "✅ Version calculation complete"
+          echo "   Release version: ${env.RELEASE_VERSION}"
+          echo "   Next version: ${env.NEXT_VERSION}"
+        }
+      }
+    }
+
+    stage('Set Release Version') {
+      when {
+        expression { env.IS_SNAPSHOT_BUILD == 'false' }
+      }
+      steps {
+        echo "Setting release version: ${env.RELEASE_VERSION}"
+        sh """#!/bin/bash
+set -euo pipefail
+mvn versions:set -DnewVersion=${env.RELEASE_VERSION} -DgenerateBackupPoms=false
+mvn versions:commit
+echo "✅ pom.xml updated to version ${env.RELEASE_VERSION}"
+"""
+      }
+    }
+
+    stage('Build Maven Project') {
+      steps {
+        echo "Building Maven project with version ${env.RELEASE_VERSION}..."
+        sh '''#!/bin/bash
+set -euo pipefail
+mvn clean package -DskipTests
+ls -lh target/*.jar
+'''
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        script {
+          echo "Building Docker image: ${IMAGE_NAME}:${env.RELEASE_VERSION}"
+          sh """#!/bin/bash
+set -euo pipefail
+docker build -t ${IMAGE_NAME}:${env.RELEASE_VERSION} .
+"""
+        }
+      }
+    }
+
+    stage('Tag Docker Image') {
+      steps {
+        script {
+          echo "Tagging image for registry..."
+          sh """#!/bin/bash
+set -euo pipefail
+docker tag ${IMAGE_NAME}:${env.RELEASE_VERSION} ${REGISTRY}/${IMAGE_NAME}:${env.RELEASE_VERSION}
+"""
+
+          if (params.PUSH_LATEST && env.IS_SNAPSHOT_BUILD == 'false') {
+            echo "Also tagging as :latest"
+            sh """#!/bin/bash
+set -euo pipefail
+docker tag ${IMAGE_NAME}:${env.RELEASE_VERSION} ${REGISTRY}/${IMAGE_NAME}:latest
+"""
+          }
+        }
+      }
+    }
+
+    stage('Login to Registry') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDS_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+          sh '''#!/bin/bash
+set -euo pipefail
+echo "🔐 Logging in to ${REGISTRY}..."
+echo "$REG_PASS" | docker login ${REGISTRY} -u "$REG_USER" --password-stdin
+'''
+        }
+      }
+    }
+
+    stage('Push Docker Image') {
+      steps {
+        script {
+          echo "📤 Pushing ${REGISTRY}/${IMAGE_NAME}:${env.RELEASE_VERSION}"
+          sh """#!/bin/bash
+set -euo pipefail
+docker push ${REGISTRY}/${IMAGE_NAME}:${env.RELEASE_VERSION}
+"""
+
+          if (params.PUSH_LATEST && env.IS_SNAPSHOT_BUILD == 'false') {
+            echo "📤 Pushing ${REGISTRY}/${IMAGE_NAME}:latest"
+            sh """#!/bin/bash
+set -euo pipefail
+docker push ${REGISTRY}/${IMAGE_NAME}:latest
+"""
+          }
+        }
+      }
+    }
+
+    stage('Finalize Release') {
+      when {
+        expression { env.IS_SNAPSHOT_BUILD == 'false' }
+      }
+      steps {
+        script {
+          withCredentials([usernamePassword(credentialsId: 'GITHUB_CREDENTIALS', usernameVariable: 'GIT_HUB_USERNAME', passwordVariable: 'GITHUB_TOKEN')]) {
+            echo "🔖 Creating release tag and committing..."
+            sh """#!/bin/bash
+set -euo pipefail
+
+# Configure git if not already configured
+git config user.email "henri.gevenois@aidji.be" || true
+git config user.name "Jenkins CI" || true
+
+# Add and commit release version
+git add pom.xml
+git commit -m "🔖 Release ${env.RELEASE_VERSION}"
+
+# Delete existing tag if it exists (locally and remotely)
+echo "🗑️ Checking for existing tag v${env.RELEASE_VERSION}..."
+git tag -d v${env.RELEASE_VERSION} 2>/dev/null || echo "Tag does not exist locally"
+
+# Configure remote with credentials
+git remote set-url origin https://\${GIT_HUB_USERNAME}:\${GITHUB_TOKEN}@github.com/henrigvs/flexi-gateway.git
+
+# Delete remote tag if exists
+git push origin :refs/tags/v${env.RELEASE_VERSION} 2>/dev/null || echo "Tag does not exist remotely"
+
+# Create and push tag
+git tag -a v${env.RELEASE_VERSION} -m "Release ${env.RELEASE_VERSION}"
+echo "📤 Pushing release tag to repository..."
+git push origin HEAD:${params.TARGET_BRANCH}
+git push origin v${env.RELEASE_VERSION}
+
+echo "✅ Release ${env.RELEASE_VERSION} tagged and pushed"
+"""
+          }
+        }
+      }
+    }
+
+    stage('Prepare Next Development Version') {
+      when {
+        expression { env.IS_SNAPSHOT_BUILD == 'false' }
+      }
+      steps {
+        echo "🔄 Setting next development version: ${env.NEXT_VERSION}"
+        sh """#!/bin/bash
+set -euo pipefail
+mvn versions:set -DnewVersion=${env.NEXT_VERSION} -DgenerateBackupPoms=false
+mvn versions:commit
+echo "✅ pom.xml updated to version ${env.NEXT_VERSION}"
+"""
+      }
+    }
+
+    stage('Commit Next Development Version') {
+      when {
+        expression { env.IS_SNAPSHOT_BUILD == 'false' }
+      }
+      steps {
+        script {
+          withCredentials([usernamePassword(credentialsId: 'GITHUB_CREDENTIALS', usernameVariable: 'GIT_HUB_USERNAME', passwordVariable: 'GITHUB_TOKEN')]) {
+            echo "Committing next development version..."
+            sh """#!/bin/bash
+set -euo pipefail
+
+# Configure git if not already configured
+git config user.email "henri.gevenois@aidji.be" || true
+git config user.name "Jenkins CI" || true
+
+# Configure remote with credentials
+git remote set-url origin https://\${GIT_HUB_USERNAME}:\${GITHUB_TOKEN}@github.com/henrigvs/flexi-gateway.git
+
+# Add pom.xml
+git add pom.xml
+
+# Commit with next dev version
+git commit -m "🔄 Prepare for next development iteration"
+
+# Push to repository
+echo "📤 Pushing next development version to repository..."
+git push origin HEAD:${params.TARGET_BRANCH}
+
+echo "✅ Next development version committed and pushed"
+"""
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      script {
+        if (env.IS_SNAPSHOT_BUILD == 'true') {
+          echo "✅ Successfully built and pushed SNAPSHOT: ${IMAGE_NAME}:${env.RELEASE_VERSION}"
+        } else {
+          echo "✅ Successfully released version ${env.RELEASE_VERSION}"
+          echo "   - Docker image: ${REGISTRY}/${IMAGE_NAME}:${env.RELEASE_VERSION}"
+          if (params.PUSH_LATEST) {
+            echo "   - Also tagged as: ${REGISTRY}/${IMAGE_NAME}:latest"
+          }
+          echo "   - Next development version: ${env.NEXT_VERSION}"
+        }
+      }
+    }
+    failure {
+      echo "❌ Build or release failed"
+    }
+    always {
+      sh """#!/bin/bash
+set -euo pipefail
+docker logout ${REGISTRY} || true
+
+# Clean up local images to save space
+docker rmi ${IMAGE_NAME}:${env.RELEASE_VERSION} 2>/dev/null || true
+docker rmi ${REGISTRY}/${IMAGE_NAME}:${env.RELEASE_VERSION} 2>/dev/null || true
+if [ "${params.PUSH_LATEST}" = "true" ] && [ "${env.IS_SNAPSHOT_BUILD}" = "false" ]; then
+  docker rmi ${REGISTRY}/${IMAGE_NAME}:latest 2>/dev/null || true
+fi
+
+echo "🧹 Cleanup complete"
+"""
+    }
+  }
+}

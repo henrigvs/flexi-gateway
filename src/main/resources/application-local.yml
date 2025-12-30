@@ -23,8 +23,6 @@ spring:
                 - Path=/usma/api/**
               filters:
                 - StripPrefix=2
-          default-filters:
-            - AddRequestHeader=X-Default-Header, DefaultValue
 
     discovery:
       enabled: false
@@ -38,7 +36,7 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:6000/eureka/
+      defaultZone: http://eureka:8761/eureka/
 
 management:
   endpoints:

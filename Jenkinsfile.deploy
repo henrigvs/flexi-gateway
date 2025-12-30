@@ -1,0 +1,246 @@
+pipeline {
+  agent any
+
+  parameters {
+    choice(
+      name: 'VERSION_TYPE',
+      choices: ['latest', 'specific'],
+      description: '''Version to deploy:
+        - latest: Deploy the latest version
+        - specific: Deploy a specific version (e.g., 0.0.3)'''
+    )
+    string(
+      name: 'SPECIFIC_VERSION',
+      defaultValue: '',
+      description: 'Specific version to deploy (only if VERSION_TYPE is "specific")'
+    )
+    choice(
+      name: 'SPRING_PROFILE',
+      choices: ['prod', 'test'],
+      description: 'Spring Boot profile to activate (prod or test)'
+    )
+  }
+
+  environment {
+    REGISTRY = 'registry.aidji.be'
+    IMAGE_NAME = 'flexi-gate'
+    REGISTRY_CREDS_ID = 'DOCKER_REGISTRY_CREDS'
+    CONTAINER_NAME = 'flexi-gate'
+    DOCKER_NETWORK = 'gateway-network'
+  }
+
+  stages {
+    stage('Determine Version') {
+      steps {
+        script {
+          def imageTag
+
+          if (params.VERSION_TYPE == 'specific') {
+            if (!params.SPECIFIC_VERSION?.trim()) {
+              error("❌ SPECIFIC_VERSION must be provided when VERSION_TYPE is 'specific'")
+            }
+            imageTag = params.SPECIFIC_VERSION.trim()
+          } else {
+            imageTag = 'latest'
+          }
+
+          env.IMAGE_TAG = imageTag
+          env.FULL_IMAGE_NAME = "${REGISTRY}/${IMAGE_NAME}:${imageTag}"
+
+          echo "📦 Deployment Configuration:"
+          echo "   Image: ${env.FULL_IMAGE_NAME}"
+          echo "   Container: ${CONTAINER_NAME}"
+          echo "   Network: ${DOCKER_NETWORK}"
+          echo "   Spring Profile: ${params.SPRING_PROFILE}"
+
+          currentBuild.description = "Deploy ${IMAGE_NAME}:${imageTag} (${params.SPRING_PROFILE})"
+        }
+      }
+    }
+
+    stage('Login to Registry') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDS_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+          sh '''#!/bin/bash
+set -euo pipefail
+echo "Logging in to ${REGISTRY}..."
+echo "$REG_PASS" | docker login ${REGISTRY} -u "$REG_USER" --password-stdin
+'''
+        }
+      }
+    }
+
+    stage('Pull Docker Image') {
+      steps {
+        script {
+          echo "Pulling image: ${env.FULL_IMAGE_NAME}"
+          sh """#!/bin/bash
+set -euo pipefail
+docker pull ${env.FULL_IMAGE_NAME}
+echo "Image pulled successfully"
+"""
+        }
+      }
+    }
+
+    stage('Prepare Configuration') {
+      steps {
+        script {
+          echo "📝 Preparing routes configuration for ${params.SPRING_PROFILE} environment"
+
+          // Download config from Jenkins Config File Provider
+          configFileProvider([
+            configFile(fileId: '62146473-2fd2-4c6d-a241-c94699046cf4',
+                       targetLocation: 'routes-override.yml')
+          ]) {
+            // Create config directory on server and copy the file
+            sh """#!/bin/bash
+set -euo pipefail
+
+mkdir -p /opt/flexi-gate/configs
+cp routes-override.yml /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.yml
+
+echo "✅ Configuration file prepared: /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.yml"
+cat /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.yml
+"""
+          }
+        }
+      }
+    }
+
+    stage('Check Docker Network') {
+      steps {
+        script {
+          echo "🌐 Checking Docker network: ${DOCKER_NETWORK}"
+          sh """#!/bin/bash
+set -euo pipefail
+
+if docker network ls --format '{{.Name}}' | grep -q "^${DOCKER_NETWORK}\$"; then
+  echo "✅ Network ${DOCKER_NETWORK} already exists"
+else
+  echo "Creating network ${DOCKER_NETWORK}..."
+  docker network create ${DOCKER_NETWORK}
+  echo "✅ Network ${DOCKER_NETWORK} created"
+fi
+"""
+        }
+      }
+    }
+
+    stage('Stop Existing Container') {
+      steps {
+        script {
+          echo "🛑 Checking for existing container: ${CONTAINER_NAME}"
+          sh """#!/bin/bash
+set -euo pipefail
+
+if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}\$"; then
+  echo "Stopping and removing existing container..."
+  docker stop ${CONTAINER_NAME} || true
+  docker rm ${CONTAINER_NAME} || true
+  echo "✅ Existing container removed"
+else
+  echo "No existing container found"
+fi
+"""
+        }
+      }
+    }
+
+    stage('Start New Container') {
+      steps {
+        script {
+          echo "🚀 Starting new container: ${CONTAINER_NAME}"
+          sh """#!/bin/bash
+set -euo pipefail
+
+docker run -d \\
+  --name ${CONTAINER_NAME} \\
+  --network ${DOCKER_NETWORK} \\
+  -e SPRING_PROFILES_ACTIVE=${params.SPRING_PROFILE} \\
+  -v /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.yml:/app/config/application-routes.yml:ro \\
+  --restart unless-stopped \\
+  ${env.FULL_IMAGE_NAME}
+
+echo "✅ Container started successfully"
+echo "   Profile: ${params.SPRING_PROFILE}"
+echo "   Routes config: /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.yml"
+"""
+        }
+      }
+    }
+
+    stage('Verify Deployment') {
+      steps {
+        script {
+          echo "🔍 Verifying container is running..."
+          sh """#!/bin/bash
+set -euo pipefail
+
+# Wait a few seconds for container to start
+sleep 5
+
+# Check container status
+if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}\$"; then
+  echo "✅ Container is running"
+  docker ps --filter "name=${CONTAINER_NAME}" --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
+
+  # Show container logs (last 20 lines)
+  echo ""
+  echo "📋 Recent logs:"
+  docker logs --tail 20 ${CONTAINER_NAME}
+else
+  echo "❌ ERROR: Container is not running!"
+  echo "Checking logs..."
+  docker logs ${CONTAINER_NAME} || true
+  exit 1
+fi
+"""
+        }
+      }
+    }
+
+    stage('Cleanup') {
+      steps {
+        script {
+          echo "🧹 Cleaning up dangling images..."
+          sh """#!/bin/bash
+set -euo pipefail
+
+# Remove dangling images (tagged as <none>)
+docker image prune -f
+
+echo "✅ Cleanup complete"
+"""
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "✅ Deployment successful!"
+      echo "   Container: ${CONTAINER_NAME}"
+      echo "   Image: ${env.FULL_IMAGE_NAME}"
+      echo "   Network: ${DOCKER_NETWORK}"
+      echo "   Spring Profile: ${params.SPRING_PROFILE}"
+      echo "   Access flexi-gate from other containers at: http://${CONTAINER_NAME}:${GATEWAY_PORT:8443}"
+    }
+    failure {
+      echo "❌ Deployment failed!"
+      script {
+        sh """#!/bin/bash
+# Show container logs if they exist
+docker logs ${CONTAINER_NAME} 2>/dev/null || echo "No container logs available"
+"""
+      }
+    }
+    always {
+      sh """#!/bin/bash
+set -euo pipefail
+docker logout ${REGISTRY} || true
+echo "🔓 Registry logout complete"
+"""
+    }
+  }
+}
