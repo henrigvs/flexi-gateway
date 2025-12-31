@@ -142,6 +142,11 @@ fi
       steps {
         script {
           echo "🚀 Starting new container: ${CONTAINER_NAME}"
+
+          // Write config to temporary file in workspace to avoid shell escaping issues
+          def tempConfigFile = "${env.WORKSPACE}/route-config-temp.json"
+          writeFile file: tempConfigFile, text: env.ROUTE_CONFIG_CONTENT
+
           sh """#!/bin/bash
 set -euo pipefail
 
@@ -150,13 +155,15 @@ docker run -d \\
   --network ${DOCKER_NETWORK} \\
   --network ${WEB_SERVER_NETWORK} \\
   -e SPRING_PROFILES_ACTIVE=${params.SPRING_PROFILE} \\
-  -e SPRING_APPLICATION_JSON="${env.ROUTE_CONFIG_CONTENT}" \\
+  -e "SPRING_APPLICATION_JSON=\$(cat ${tempConfigFile})" \\
   --restart unless-stopped \\
   ${env.FULL_IMAGE_NAME}
 
+rm -f ${tempConfigFile}
+
 echo "✅ Container started successfully"
 echo "   Profile: ${params.SPRING_PROFILE}"
-echo "   Routes config: /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.yml"
+echo "   Routes config injected via SPRING_APPLICATION_JSON"
 """
         }
       }
