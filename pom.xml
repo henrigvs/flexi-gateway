@@ -11,7 +11,7 @@
 
     <groupId>be.aidji</groupId>
     <artifactId>flexi-gate</artifactId>
-    <version>1.0.3-SNAPSHOT</version>
+    <version>1.0.4-SNAPSHOT</version>
 
     <name>flexi-gate</name>
     <description>flexi-gate</description>
