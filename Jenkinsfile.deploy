@@ -104,6 +104,7 @@ cp routes-override.json /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.
 echo "✅ Configuration file prepared: /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json"
 cat /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json
 """
+            }
         }
       }
     }
@@ -152,23 +153,21 @@ fi
         script {
           echo "🚀 Starting new container: ${CONTAINER_NAME}"
 
-          // Write config to temporary file in workspace to avoid shell escaping issues
-          def tempConfigFile = "${env.WORKSPACE}/route-config-temp.json"
-          writeFile file: tempConfigFile, text: env.ROUTE_CONFIG_CONTENT
-
           sh """#!/bin/bash
 set -euo pipefail
 
+# Read the config file content
+CONFIG_JSON=\$(cat /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json)
+
+# Start the container with the config injected
 docker run -d \\
   --name ${CONTAINER_NAME} \\
   --network ${DOCKER_NETWORK} \\
   --network ${WEB_SERVER_NETWORK} \\
   -e SPRING_PROFILES_ACTIVE=${params.SPRING_PROFILE} \\
-  -e "SPRING_APPLICATION_JSON=\$(cat /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json)" \\
+  -e "SPRING_APPLICATION_JSON=\${CONFIG_JSON}" \\
   --restart unless-stopped \\
   ${env.FULL_IMAGE_NAME}
-
-rm -f /opt/flexi-gate/
 
 echo "✅ Container started successfully"
 echo "   Profile: ${params.SPRING_PROFILE}"
