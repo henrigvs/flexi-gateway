@@ -90,11 +90,20 @@ echo "Image pulled successfully"
           echo "📝 Preparing routes configuration for ${params.SPRING_PROFILE} environment"
 
           // Download config from Jenkins Config File Provider
-          configFileProvider([configFile(fileId: '62146473-2fd2-4c6d-a241-c94699046cf4	', variable: 'ROUTE_CONFIG_JSON')]) {
-            script {
-                env.ROUTE_CONFIG_CONTENT = readFile(env.ROUTE_CONFIG_JSON)
-            }
-          }
+          configFileProvider([
+              configFile(fileId: '62146473-2fd2-4c6d-a241-c94699046cf4',
+                         targetLocation: 'routes-override.json')
+            ]) {
+              // Create config directory on server and copy the file
+              sh """#!/bin/bash
+set -euo pipefail
+
+mkdir -p /opt/flexi-gate/configs
+cp routes-override.json /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json
+
+echo "✅ Configuration file prepared: /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json"
+cat /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json
+"""
         }
       }
     }
@@ -155,11 +164,11 @@ docker run -d \\
   --network ${DOCKER_NETWORK} \\
   --network ${WEB_SERVER_NETWORK} \\
   -e SPRING_PROFILES_ACTIVE=${params.SPRING_PROFILE} \\
-  -e "SPRING_APPLICATION_JSON=\$(cat ${tempConfigFile})" \\
+  -e "SPRING_APPLICATION_JSON=\$(cat /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json)" \\
   --restart unless-stopped \\
   ${env.FULL_IMAGE_NAME}
 
-rm -f ${tempConfigFile}
+rm -f /opt/flexi-gate/
 
 echo "✅ Container started successfully"
 echo "   Profile: ${params.SPRING_PROFILE}"
