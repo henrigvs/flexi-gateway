@@ -28,6 +28,7 @@ pipeline {
     CONTAINER_NAME = 'flexi-gate'
     DOCKER_NETWORK = 'gateway-network'
     WEB_SERVER_NETWORK = 'nginx-network'
+    GATEWAY_PORT = '8443'
   }
 
   stages {
@@ -51,7 +52,7 @@ pipeline {
           echo "📦 Deployment Configuration:"
           echo "   Image: ${env.FULL_IMAGE_NAME}"
           echo "   Container: ${CONTAINER_NAME}"
-          echo "   Network: ${DOCKER_NETWORK}"
+          echo "   Networks: ${DOCKER_NETWORK}, ${WEB_SERVER_NETWORK}"
           echo "   Spring Profile: ${params.SPRING_PROFILE}"
 
           currentBuild.description = "Deploy ${IMAGE_NAME}:${imageTag} (${params.SPRING_PROFILE})"
@@ -78,7 +79,7 @@ echo "$REG_PASS" | docker login ${REGISTRY} -u "$REG_USER" --password-stdin
           sh """#!/bin/bash
 set -euo pipefail
 docker pull ${env.FULL_IMAGE_NAME}
-echo "Image pulled successfully"
+echo "✅ Image pulled successfully"
 """
         }
       }
@@ -89,33 +90,34 @@ echo "Image pulled successfully"
         script {
           echo "📝 Preparing routes configuration for ${params.SPRING_PROFILE} environment"
 
-          // Download config from Jenkins Config File Provider
           configFileProvider([
               configFile(fileId: '62146473-2fd2-4c6d-a241-c94699046cf4',
                          targetLocation: 'routes-override.json')
             ]) {
-              // Create config directory on server and copy the file
               sh """#!/bin/bash
 set -euo pipefail
 
-mkdir -p /opt/flexi-gate/configs
-cp routes-override.json /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json
+mkdir -p \${WORKSPACE}/configs
+cp routes-override.json \${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json
 
-echo "✅ Configuration file prepared: /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json"
-cat /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json
+echo "✅ Configuration file prepared:"
+echo "   \${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json"
+echo ""
+echo "📋 Content:"
+cat \${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json
 """
             }
         }
       }
     }
 
-    stage('Check Docker Network') {
+    stage('Check Docker Networks') {
       steps {
         script {
-          echo "🌐 Checking Docker network: ${DOCKER_NETWORK}"
           sh """#!/bin/bash
 set -euo pipefail
 
+# gateway-network: created by this pipeline if missing
 if docker network ls --format '{{.Name}}' | grep -q "^${DOCKER_NETWORK}\$"; then
   echo "✅ Network ${DOCKER_NETWORK} already exists"
 else
@@ -123,6 +125,13 @@ else
   docker network create ${DOCKER_NETWORK}
   echo "✅ Network ${DOCKER_NETWORK} created"
 fi
+
+# nginx-network: must already exist (managed elsewhere)
+if ! docker network ls --format '{{.Name}}' | grep -q "^${WEB_SERVER_NETWORK}\$"; then
+  echo "❌ Network ${WEB_SERVER_NETWORK} not found - is the nginx stack running?"
+  exit 1
+fi
+echo "✅ Network ${WEB_SERVER_NETWORK} exists"
 """
         }
       }
@@ -131,17 +140,16 @@ fi
     stage('Stop Existing Container') {
       steps {
         script {
-          echo "🛑 Checking for existing container: ${CONTAINER_NAME}"
           sh """#!/bin/bash
 set -euo pipefail
 
 if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}\$"; then
-  echo "Stopping and removing existing container..."
+  echo "🛑 Stopping and removing existing container..."
   docker stop ${CONTAINER_NAME} || true
   docker rm ${CONTAINER_NAME} || true
   echo "✅ Existing container removed"
 else
-  echo "No existing container found"
+  echo "ℹ️  No existing container found"
 fi
 """
         }
@@ -151,23 +159,26 @@ fi
     stage('Start New Container') {
       steps {
         script {
-          echo "🚀 Starting new container: ${CONTAINER_NAME}"
-
           sh """#!/bin/bash
 set -euo pipefail
 
 # Read the config file content
-CONFIG_JSON=\$(cat /opt/flexi-gate/configs/routes-${params.SPRING_PROFILE}.json)
+CONFIG_JSON=\$(cat \${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json)
 
-# Start the container with the config injected
+echo "🚀 Starting ${CONTAINER_NAME}..."
+
+# Start container on primary network
 docker run -d \\
   --name ${CONTAINER_NAME} \\
   --network ${DOCKER_NETWORK} \\
-  --network ${WEB_SERVER_NETWORK} \\
   -e SPRING_PROFILES_ACTIVE=${params.SPRING_PROFILE} \\
   -e "SPRING_APPLICATION_JSON=\${CONFIG_JSON}" \\
   --restart unless-stopped \\
   ${env.FULL_IMAGE_NAME}
+
+# Connect to web server network
+echo "🔌 Connecting ${CONTAINER_NAME} to ${WEB_SERVER_NETWORK}..."
+docker network connect ${WEB_SERVER_NETWORK} ${CONTAINER_NAME}
 
 echo "✅ Container started successfully"
 echo "   Profile: ${params.SPRING_PROFILE}"
@@ -180,26 +191,27 @@ echo "   Routes config injected via SPRING_APPLICATION_JSON"
     stage('Verify Deployment') {
       steps {
         script {
-          echo "🔍 Verifying container is running..."
           sh """#!/bin/bash
 set -euo pipefail
 
-# Wait a few seconds for container to start
+echo "⏳ Waiting 5s for container to initialize..."
 sleep 5
 
-# Check container status
 if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}\$"; then
   echo "✅ Container is running"
   docker ps --filter "name=${CONTAINER_NAME}" --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
 
-  # Show container logs (last 20 lines)
+  # Verify connected networks
+  echo ""
+  echo "🌐 Connected networks:"
+  docker inspect ${CONTAINER_NAME} --format '{{range \$k, \$v := .NetworkSettings.Networks}}  - {{\$k}}{{println}}{{end}}'
+
   echo ""
   echo "📋 Recent logs:"
   docker logs --tail 20 ${CONTAINER_NAME}
 else
   echo "❌ ERROR: Container is not running!"
-  echo "Checking logs..."
-  docker logs ${CONTAINER_NAME} || true
+  docker logs ${CONTAINER_NAME} 2>/dev/null || echo "No logs available"
   exit 1
 fi
 """
@@ -210,13 +222,10 @@ fi
     stage('Cleanup') {
       steps {
         script {
-          echo "🧹 Cleaning up dangling images..."
           sh """#!/bin/bash
 set -euo pipefail
-
-# Remove dangling images (tagged as <none>)
+echo "🧹 Cleaning up dangling images..."
 docker image prune -f
-
 echo "✅ Cleanup complete"
 """
         }
@@ -226,19 +235,19 @@ echo "✅ Cleanup complete"
 
   post {
     success {
-      echo "✅ Deployment successful!"
-      echo "   Container: ${CONTAINER_NAME}"
-      echo "   Image: ${env.FULL_IMAGE_NAME}"
-      echo "   Network: ${DOCKER_NETWORK}"
-      echo "   Web server network: ${WEB_SERVER_NETWORK}"
-      echo "   Spring Profile: ${params.SPRING_PROFILE}"
-      echo "   Access flexi-gate from other containers at: http://${CONTAINER_NAME}:${GATEWAY_PORT:8443}"
+      script {
+        echo "✅ Deployment successful!"
+        echo "   Container: ${CONTAINER_NAME}"
+        echo "   Image: ${env.FULL_IMAGE_NAME}"
+        echo "   Networks: ${DOCKER_NETWORK}, ${WEB_SERVER_NETWORK}"
+        echo "   Spring Profile: ${params.SPRING_PROFILE}"
+        echo "   Access flexi-gate from other containers at: http://${CONTAINER_NAME}:${GATEWAY_PORT}"
+      }
     }
     failure {
       echo "❌ Deployment failed!"
       script {
         sh """#!/bin/bash
-# Show container logs if they exist
 docker logs ${CONTAINER_NAME} 2>/dev/null || echo "No container logs available"
 """
       }
