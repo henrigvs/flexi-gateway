@@ -14,6 +14,11 @@ pipeline {
       defaultValue: '',
       description: 'Specific version to deploy (only if VERSION_TYPE is "specific")'
     )
+    string(
+      name: 'ROUTE_CONFIG_FILE_ID',
+      defaultValue: '',
+      description: 'Define the ID of file (in jenkins) to override routes'
+    )
     choice(
       name: 'SPRING_PROFILE',
       choices: ['prod', 'test'],
@@ -91,7 +96,7 @@ echo "✅ Image pulled successfully"
           echo "📝 Preparing routes configuration for ${params.SPRING_PROFILE} environment"
 
           configFileProvider([
-              configFile(fileId: '62146473-2fd2-4c6d-a241-c94699046cf4',
+              configFile(fileId: "${params.SPECIFIC_VERSION}"",
                          targetLocation: 'routes-override.json')
             ]) {
               sh """#!/bin/bash
