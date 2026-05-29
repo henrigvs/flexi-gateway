@@ -102,14 +102,14 @@ echo "✅ Image pulled successfully"
               sh """#!/bin/bash
 set -euo pipefail
 
-mkdir -p \${WORKSPACE}/configs
-cp routes-override.json \${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json
+mkdir -p "\${WORKSPACE}/configs"
+cp routes-override.json "\${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json"
 
 echo "✅ Configuration file prepared:"
 echo "   \${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json"
 echo ""
 echo "📋 Content:"
-cat \${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json
+cat "\${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json"
 """
             }
         }
@@ -168,7 +168,7 @@ fi
 set -euo pipefail
 
 # Read the config file content
-CONFIG_JSON=\$(cat \${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json)
+CONFIG_JSON=\$(cat "\${WORKSPACE}/configs/routes-${params.SPRING_PROFILE}.json")
 
 echo "🚀 Starting ${CONTAINER_NAME}..."
 
