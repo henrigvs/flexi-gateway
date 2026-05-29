@@ -96,7 +96,7 @@ echo "✅ Image pulled successfully"
           echo "📝 Preparing routes configuration for ${params.SPRING_PROFILE} environment"
 
           configFileProvider([
-              configFile(fileId: "${params.ROUTE_CONFIG_FILE_ID}"",
+              configFile(fileId: "${params.ROUTE_CONFIG_FILE_ID}",
                          targetLocation: 'routes-override.json')
             ]) {
               sh """#!/bin/bash
