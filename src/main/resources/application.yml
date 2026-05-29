@@ -20,11 +20,14 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health, prometheus
+  endpoint:
+    health:
+      show-details: never
 
 logging:
   level:
-    org.springframework.cloud.gateway: DEBUG
-    org.springframework.web: DEBUG
-    org.springframework.cloud.client.discovery.simple: DEBUG
-    reactor.netty.http.client: DEBUG
+    org.springframework.cloud.gateway: INFO
+    org.springframework.web: INFO
+    org.springframework.cloud.client.discovery.simple: INFO
+    reactor.netty.http.client: INFO
