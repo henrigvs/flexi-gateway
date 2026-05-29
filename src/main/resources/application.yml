@@ -24,6 +24,10 @@ management:
   endpoint:
     health:
       show-details: never
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
 logging:
   level:

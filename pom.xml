@@ -60,12 +60,6 @@
             <version>${spring-cloud.version}</version>
         </dependency>
 
-        <!-- Spring Security (optionnel pour JWT/OAuth2) -->
-        <!--ependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
-        </dependency-->
-
         <!-- JWT (si tu veux gérer les tokens) -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -91,7 +85,6 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
-            <version>${micrometer-tracing.version}</version>
         </dependency>
 
         <!-- Spring Boot Actuator -->
