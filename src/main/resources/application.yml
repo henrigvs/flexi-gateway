@@ -10,13 +10,18 @@ spring:
         webflux:
           default-filters:
             - AddRequestHeader=X-Default-Header, DefaultValue
+          metrics:
+            enabled: true
 
 eureka:
   client:
     service-url:
       defaultZone: http://eureka:${EUREKA-PORT:8761}/eureka/
 
+# ⬅️ management à la RACINE, pas sous spring
 management:
+  server:
+    port: 8444
   endpoints:
     web:
       exposure:
@@ -24,6 +29,8 @@ management:
   endpoint:
     health:
       show-details: never
+    prometheus:
+      enabled: true
   prometheus:
     metrics:
       export:
@@ -31,7 +38,31 @@ management:
 
 logging:
   level:
-    org.springframework.cloud.gateway: INFO
-    org.springframework.web: INFO
-    org.springframework.cloud.client.discovery.simple: INFO
-    reactor.netty.http.client: INFO
+    logging:
+      level:
+        # Gateway principal
+        org.springframework.cloud.gateway: ${LOG_LEVEL_GATEWAY:ERROR}
+        org.springframework.cloud.gateway.handler: ${LOG_LEVEL_GATEWAY:ERROR}
+        org.springframework.cloud.gateway.route: ${LOG_LEVEL_GATEWAY:ERROR}
+
+        # Web & WebSocket
+        org.springframework.web: ${LOG_LEVEL_WEB:ERROR}
+        org.springframework.web.socket: ${LOG_LEVEL_WEB:ERROR}
+        org.springframework.web.reactive: ${LOG_LEVEL_WEB:ERROR}
+        org.springframework.web.reactive.socket: ${LOG_LEVEL_WEB:TRACE}
+        org.springframework.http.server.reactive: ${LOG_LEVEL_WEB:ERROR}
+
+        # Reactor Netty (server)
+        reactor.netty: ${LOG_LEVEL_NETTY:ERROR}
+        reactor.netty.http.client: ${LOG_LEVEL_NETTY:ERROR}
+        reactor.netty.http.server: ${LOG_LEVEL_NETTY:ERROR}
+
+        # Headers & Requests detailed
+        org.springframework.web.server.adapter.HttpWebHandlerAdapter: ${LOG_LEVEL_REQUEST:ERROR}
+
+        # Discovery (if used)
+        org.springframework.cloud.client.discovery: ${LOG_LEVEL_DISCO:ERROR}
+
+      # Pattern for stdout
+      pattern:
+        console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
