@@ -34,7 +34,7 @@ pipeline {
       description: '''The level of the log for the web requests'''
     )
     choice(
-      name: 'LOG_LEVEL_DISCO,
+      name: 'LOG_LEVEL_DISCO',
       choices: ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'],
       defaultValue: 'ERROR',
       description: '''The level of the log for spring eureka discovery'''
