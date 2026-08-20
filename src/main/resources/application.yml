@@ -16,7 +16,7 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: http://eureka:${EUREKA-PORT:8761}/eureka/
+      defaultZone: http://eureka:${EUREKA_PORT:8761}/eureka/
 
 # ⬅️ management à la RACINE, pas sous spring
 management:
@@ -38,31 +38,29 @@ management:
 
 logging:
   level:
-    logging:
-      level:
-        # Gateway principal
-        org.springframework.cloud.gateway: ${LOG_LEVEL_GATEWAY:ERROR}
-        org.springframework.cloud.gateway.handler: ${LOG_LEVEL_GATEWAY:ERROR}
-        org.springframework.cloud.gateway.route: ${LOG_LEVEL_GATEWAY:ERROR}
+    # Gateway principal
+    org.springframework.cloud.gateway: ${LOG_LEVEL_GATEWAY:ERROR}
+    org.springframework.cloud.gateway.handler: ${LOG_LEVEL_GATEWAY:ERROR}
+    org.springframework.cloud.gateway.route: ${LOG_LEVEL_GATEWAY:ERROR}
 
-        # Web & WebSocket
-        org.springframework.web: ${LOG_LEVEL_WEB:ERROR}
-        org.springframework.web.socket: ${LOG_LEVEL_WEB:ERROR}
-        org.springframework.web.reactive: ${LOG_LEVEL_WEB:ERROR}
-        org.springframework.web.reactive.socket: ${LOG_LEVEL_WEB:TRACE}
-        org.springframework.http.server.reactive: ${LOG_LEVEL_WEB:ERROR}
+    # Web & WebSocket
+    org.springframework.web: ${LOG_LEVEL_WEB:ERROR}
+    org.springframework.web.socket: ${LOG_LEVEL_WEB:ERROR}
+    org.springframework.web.reactive: ${LOG_LEVEL_WEB:ERROR}
+    org.springframework.web.reactive.socket: ${LOG_LEVEL_WEB:ERROR}
+    org.springframework.http.server.reactive: ${LOG_LEVEL_WEB:ERROR}
 
-        # Reactor Netty (server)
-        reactor.netty: ${LOG_LEVEL_NETTY:ERROR}
-        reactor.netty.http.client: ${LOG_LEVEL_NETTY:ERROR}
-        reactor.netty.http.server: ${LOG_LEVEL_NETTY:ERROR}
+    # Reactor Netty (server)
+    reactor.netty: ${LOG_LEVEL_NETTY:ERROR}
+    reactor.netty.http.client: ${LOG_LEVEL_NETTY:ERROR}
+    reactor.netty.http.server: ${LOG_LEVEL_NETTY:ERROR}
 
-        # Headers & Requests detailed
-        org.springframework.web.server.adapter.HttpWebHandlerAdapter: ${LOG_LEVEL_REQUEST:ERROR}
+    # Headers & Requests detailed
+    org.springframework.web.server.adapter.HttpWebHandlerAdapter: ${LOG_LEVEL_REQUEST:ERROR}
 
-        # Discovery (if used)
-        org.springframework.cloud.client.discovery: ${LOG_LEVEL_DISCO:ERROR}
+    # Discovery (if used)
+    org.springframework.cloud.client.discovery: ${LOG_LEVEL_DISCO:ERROR}
 
-      # Pattern for stdout
-      pattern:
-        console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
+  # Pattern for stdout
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
