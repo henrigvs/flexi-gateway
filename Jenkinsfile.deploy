@@ -12,31 +12,26 @@ pipeline {
     choice(
       name: 'LOG_LEVEL_GATEWAY',
       choices: ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'],
-      defaultValue: 'ERROR',
       description: '''The level of the log for spring gateway'''
     )
     choice(
       name: 'LOG_LEVEL_WEB',
       choices: ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'],
-      defaultValue: 'ERROR',
       description: '''The level of the log for spring web'''
     )
     choice(
       name: 'LOG_LEVEL_NETTY',
       choices: ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'],
-      defaultValue: 'ERROR',
       description: '''The level of the log for netty server'''
     )
     choice(
       name: 'LOG_LEVEL_REQUEST',
       choices: ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'],
-      defaultValue: 'ERROR',
       description: '''The level of the log for the web requests'''
     )
     choice(
       name: 'LOG_LEVEL_DISCO',
       choices: ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'],
-      defaultValue: 'ERROR',
       description: '''The level of the log for spring eureka discovery'''
     )
     string(
